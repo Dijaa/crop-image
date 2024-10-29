@@ -66,8 +66,8 @@ export default async function handler(
     console.log("Dimensões esperadas:", expectedWidth, expectedHeight);
     // Obtém as dimensões reais da imagem
     const metadata = await sharp(imageBuffer).metadata();
-    let width = metadata.width || expectedWidth;
-    let height = metadata.height || expectedHeight;
+    const width = metadata.width || expectedWidth;
+    const height = metadata.height || expectedHeight;
 
     console.log("Dimensões reais:", width, height);
 
