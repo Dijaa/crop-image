@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+/public/imagens/cropped/*
 
 # debug
 npm-debug.log*
