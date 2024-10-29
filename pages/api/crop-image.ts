@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import formidable from "formidable";
 import fs from "fs";
-import path from "path";
 import sharp from "sharp";
+import { put } from "@vercel/blob";
 
 export const config = {
   api: {
@@ -56,20 +56,22 @@ export default async function handler(
 
     const tempPath = file.filepath;
 
-    // Read the image into a buffer once
+    // Lê a imagem em um buffer
     const imageBuffer = fs.readFileSync(tempPath);
 
-    // Obtain the real dimensions of the image
-    const metadata = await sharp(imageBuffer).metadata();
-    let { width, height } = metadata;
-    console.log("Dimensões reais:", width, height);
 
-    // Expected dimensions
+    // Dimensões esperadas
     const expectedHeight = 1080;
     const expectedWidth = 1080 * n;
     console.log("Dimensões esperadas:", expectedWidth, expectedHeight);
+    // Obtém as dimensões reais da imagem
+    const metadata = await sharp(imageBuffer).metadata();
+    let width = metadata.width || expectedWidth;
+    let height = metadata.height || expectedHeight;
 
-    // Resize the image to ensure exact dimensions
+    console.log("Dimensões reais:", width, height);
+
+    // Redimensiona a imagem, se necessário
     let resizedBuffer = imageBuffer;
     if (height !== expectedHeight || width !== expectedWidth) {
       resizedBuffer = await sharp(imageBuffer)
@@ -78,29 +80,8 @@ export default async function handler(
         })
         .toBuffer();
       console.log("Imagem redimensionada.");
-
-      // Get dimensions after resizing
-      const resizedMetadata = await sharp(resizedBuffer).metadata();
-      width = resizedMetadata.width || expectedWidth;
-      height = resizedMetadata.height || expectedHeight;
     }
-    console.log("Dimensões após redimensionamento:", width, height);
 
-    // Verify dimensions after resizing
-    if (width !== expectedWidth || height !== expectedHeight) {
-      return res.status(500).json({
-        error: "Falha ao redimensionar a imagem para as dimensões esperadas.",
-      });
-    }
-    console.log("Imagem pronta para ser processada.");
-
-    const dir = path.join(process.cwd(), "public", "imagens", "cropped");
-    if (!fs.existsSync(dir)) {
-      console.log("Criando diretório:", dir);
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    console.log("Diretório de imagens:", dir);
-    const timestamp = Date.now();
     const imagePaths: string[] = [];
     console.log("Processando a imagem...");
 
@@ -108,33 +89,32 @@ export default async function handler(
       const left = i * 1080;
       console.log(`Cortando a imagem ${i + 1}, posição: ${left}`);
 
-      // Ensure extraction area is within image bounds
       if (left + 1080 > width) {
-        console.warn(
-          `Área de extração fora dos limites para a imagem ${i + 1}`
-        );
+        console.warn(`Área de extração fora dos limites para a imagem ${i + 1}`);
         break;
       }
 
-      const outputPath = path.join(dir, `cropped-${timestamp}-${i}.jpg`);
-
-      // Create a new Sharp instance for each extraction
-      await sharp(resizedBuffer)
+      const croppedBuffer = await sharp(resizedBuffer)
         .extract({
           left,
           top: 0,
           width: 1080,
           height: 1080,
         })
-        .toFile(outputPath);
+        .toBuffer();
 
-      imagePaths.push(`/imagens/cropped/cropped-${timestamp}-${i}.jpg`);
-      console.log(`Imagem ${i + 1} cortada com sucesso.`);
+      const { url } = await put(`cropped-${Date.now()}-${i}.jpg`, croppedBuffer, {
+        contentType: "image/jpeg",
+        access: "public",
+      });
+
+      imagePaths.push(url);
+      console.log(`Imagem ${i + 1} cortada e carregada com sucesso.`);
     }
 
     console.log("Imagem processada com sucesso.");
 
-    // Delete the temporary file after processing
+    // Deleta o arquivo temporário após o processamento
     fs.unlinkSync(tempPath);
     console.log("Arquivo temporário excluído.");
 
